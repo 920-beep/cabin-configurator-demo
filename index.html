@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cabin Configurator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: full-height viewer, finish controls docked below the canvas.
+   One visual world (dark graphite + brass), so no light theme. */
+:root{
+  --bg:#14161a; --panel:#1b1e22; --raise:#262a2f; --line:#363b42;
+  --text:#ece9e2; --muted:#9a9fa8; --accent:#d8b06a;
+  --display:'Barlow Semi Condensed','Arial Narrow',system-ui,sans-serif;
+  --body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 var(--body);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#app{height:100%;display:flex;flex-direction:column}
+#view{position:relative;flex:1;min-height:0;overflow:hidden}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#c:active{cursor:grabbing}
+.top{position:absolute;inset:12px 16px auto 16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;pointer-events:none}
+.top>*{pointer-events:auto}
+.title{text-shadow:0 1px 10px rgba(0,0,0,.65)}
+.title h1{margin:0;font:600 17px/1.1 var(--display);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.title p{margin:3px 0 0;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+@media (max-width:520px){
+  .top{inset:10px 12px auto 12px;gap:8px}
+  .title h1{font-size:13px;letter-spacing:.03em}
+  .title p{font-size:11px}
+  .seg button{padding:6px 8px;font-size:11px}
+}
+.ctl{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.seg{display:inline-flex;padding:2px;gap:2px;background:rgba(27,30,34,.86);border:1px solid var(--line);border-radius:9px;backdrop-filter:blur(6px)}
+.seg button{border:0;background:transparent;color:var(--muted);padding:6px 11px;border-radius:7px;font:500 12px/1 var(--body);letter-spacing:.02em}
+.seg button[aria-pressed=true]{background:var(--raise);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
+.panel{flex:none;background:var(--panel);border-top:1px solid var(--line);padding:10px 0 12px}
+.row{display:flex;gap:8px;overflow-x:auto;padding:0 16px;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+#chips button{flex:none;border:1px solid var(--line);background:transparent;border-radius:999px;padding:7px 13px;font:500 13px/1 var(--body);color:var(--muted)}
+#chips button[aria-pressed=true]{border-color:var(--accent);color:var(--text);background:rgba(216,176,106,.10)}
+#swatches{margin-top:10px;gap:10px}
+.sw{flex:none;width:62px;display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:0;padding:0}
+.sw .dot{width:46px;height:46px;border-radius:50%;background-size:cover;background-position:center;box-shadow:0 0 0 1px var(--line),inset 0 0 0 1px rgba(255,255,255,.06)}
+.sw[aria-pressed=true] .dot{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--accent)}
+.sw .nm{font-size:11px;line-height:1.15;color:var(--muted);text-align:center}
+.sw[aria-pressed=true] .nm{color:var(--text)}
+.foot{margin:10px 16px 0;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 16px;color:var(--muted);font-size:12px}
+.foot b{color:var(--text);font-weight:500}
+#nogl{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted)}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <canvas id="c"></canvas>
+    <div id="nogl">This demo needs WebGL. Please open it in a recent version of Chrome, Safari, Edge or Firefox.</div>
+    <div class="top">
+      <div class="title"><h1>Cabin configurator</h1><p id="dims">1100 × 1400 × 2200 mm</p></div>
+      <div class="ctl">
+        <div class="seg" id="views" role="group" aria-label="View">
+          <button type="button" data-view="cutaway" aria-pressed="true">Cutaway</button>
+          <button type="button" data-view="exterior" aria-pressed="false">Exterior</button>
+          <button type="button" data-view="inside" aria-pressed="false">Inside</button>
+        </div>
+        <div class="seg" id="sizes" role="group" aria-label="Cabin size">
+          <button type="button" data-size="S" aria-pressed="true">Small</button>
+          <button type="button" data-size="M" aria-pressed="false">Medium</button>
+          <button type="button" data-size="L" aria-pressed="false">Large</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="row" id="chips" role="group" aria-label="Surface"></div>
+    <div class="row" id="swatches" role="group" aria-label="Finish"></div>
+    <div class="foot"><span id="hint">Drag to rotate · scroll or pinch to zoom</span><span id="sel"></span></div>
+    <div class="foot"><span>Demo scene: generic cabin with procedural finishes. Your catalogue textures replace them in the final build.</span></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+
+const $ = (s) => document.querySelector(s);
+const H = 2.2;
+const SIZES = { S: { w: 1.10, d: 1.40 }, M: { w: 1.35, d: 1.40 }, L: { w: 1.60, d: 1.50 } };
+const SURF = [
+  { k: 'back', n: 'Back wall' }, { k: 'sides', n: 'Side walls' }, { k: 'floor', n: 'Floor' },
+  { k: 'ceiling', n: 'Ceiling' }, { k: 'rail', n: 'Handrail' }, { k: 'doors', n: 'Doors' }
+];
+const ORDER = ['steel', 'mirror', 'oak', 'walnut', 'glass', 'white', 'brass', 'stone'];
+const state = {
+  size: 'S', view: 'cutaway', active: 'back',
+  finish: { back: 'walnut', sides: 'steel', floor: 'stone', ceiling: 'white', rail: 'brass', doors: 'steel' }
+};
+
+/* ---------- renderer ---------- */
+const canvas = $('#c'), viewEl = $('#view');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  $('#nogl').style.display = 'flex';
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+RectAreaLightUniformsLib.init();
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161a);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.42;
+
+const camera = new THREE.PerspectiveCamera(36, 1, 0.05, 60);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.enablePan = false;
+controls.minDistance = 1.6; controls.maxDistance = 8; controls.maxPolarAngle = Math.PI / 2 - 0.01;
+controls.rotateSpeed = 0.8;
+let needs = true;
+controls.addEventListener('change', () => { needs = true; });
+
+/* ---------- procedural textures ---------- */
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const mk = (n = 512) => { const c = document.createElement('canvas'); c.width = c.height = n; return c; };
+const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+function tex(c, srgb) {
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  return t;
+}
+function brushedCanvas(base, seed, contrast) {
+  const R = rng(seed), c = mk(), g = c.getContext('2d');
+  g.fillStyle = base; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 2600; i++) {
+    const x = R() * 512, y = R() * 512, len = 60 + R() * 340, a = 0.02 + R() * contrast, l = R() < 0.5 ? 255 : 0;
+    g.strokeStyle = `rgba(${l},${l},${l},${a})`; g.lineWidth = 0.5 + R() * 1.3;
+    for (const oy of [0, -512]) { g.beginPath(); g.moveTo(x, y + oy); g.lineTo(x + (R() - 0.5) * 1.2, y + len + oy); g.stroke(); }
+  }
+  return c;
+}
+function roughCanvas(seed, lo, hi) {
+  const R = rng(seed), c = mk(), g = c.getContext('2d'), mid = ((lo + hi) / 2) | 0;
+  g.fillStyle = `rgb(${mid},${mid},${mid})`; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 2600; i++) {
+    const x = R() * 512, y = R() * 512, len = 60 + R() * 340, v = (lo + R() * (hi - lo)) | 0;
+    g.strokeStyle = `rgba(${v},${v},${v},0.5)`; g.lineWidth = 0.6 + R() * 1.4;
+    for (const oy of [0, -512]) { g.beginPath(); g.moveTo(x, y + oy); g.lineTo(x, y + len + oy); g.stroke(); }
+  }
+  return c;
+}
+function woodCanvas(base, dark, seed) {
+  const R = rng(seed), c = mk(), g = c.getContext('2d');
+  g.fillStyle = `rgb(${base})`; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 300; i++) {
+    const x0 = R() * 512, lw = 0.5 + R() * 2.4, a = 0.05 + R() * 0.24, ph = R() * 6.28, amp = 2 + R() * 11, fr = 0.004 + R() * 0.011;
+    g.strokeStyle = `rgba(${dark},${a})`; g.lineWidth = lw;
+    for (const ox of [0, -512, 512]) {
+      g.beginPath();
+      for (let y = 0; y <= 512; y += 8) {
+        const x = x0 + ox + Math.sin(y * fr + ph) * amp + Math.sin(y * fr * 3.1 + ph) * amp * 0.2;
+        if (y === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+  }
+  return c;
+}
+function stoneCanvas(seed) {
+  const R = rng(seed), c = mk(), g = c.getContext('2d');
+  g.fillStyle = '#8c8d90'; g.fillRect(0, 0, 512, 512);
+  const cols = ['#2b2c2f', '#d9d6d0', '#5a5b5f', '#a79d94', '#3d3e42', '#c8c4bd'];
+  for (let i = 0; i < 520; i++) {
+    g.fillStyle = `rgba(120,120,124,${0.05 + R() * 0.1})`;
+    g.beginPath(); g.arc(R() * 512, R() * 512, 18 + R() * 46, 0, 6.28); g.fill();
+  }
+  for (let i = 0; i < 5200; i++) {
+    const x = R() * 512, y = R() * 512, r = 0.6 + R() * R() * 4.2;
+    g.fillStyle = cols[(R() * cols.length) | 0]; g.globalAlpha = 0.55 + R() * 0.4;
+    g.beginPath(); g.ellipse(x, y, r, r * (0.6 + R() * 0.6), R() * 3.14, 0, 6.28); g.fill();
+  }
+  g.globalAlpha = 1;
+  return c;
+}
+function glassCanvas() {
+  const c = mk(), g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 512, 512);
+  gr.addColorStop(0, '#20242a'); gr.addColorStop(1, '#050607');
+  g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
+  g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.moveTo(40, 512); g.lineTo(230, 0); g.lineTo(300, 0); g.lineTo(110, 512); g.fill();
+  return c;
+}
+function mirrorCanvas() {
+  const c = mk(), g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 512, 512);
+  gr.addColorStop(0, '#f5f7f9'); gr.addColorStop(0.35, '#9aa4ad'); gr.addColorStop(0.6, '#e9edf0'); gr.addColorStop(1, '#58616b');
+  g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
+  g.fillStyle = 'rgba(255,255,255,0.35)'; g.beginPath(); g.moveTo(120, 512); g.lineTo(300, 0); g.lineTo(350, 0); g.lineTo(170, 512); g.fill();
+  return c;
+}
+function whiteCanvas() {
+  const R = rng(5), c = mk(), g = c.getContext('2d');
+  g.fillStyle = '#efede8'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(0,0,0,${R() * 0.03})`; g.fillRect(R() * 512, R() * 512, 2, 2); }
+  return c;
+}
+
+/* ---------- finishes ---------- */
+const FIN = {};
+function addFin(id, name, mat, src) {
+  const s = mk(96), g = s.getContext('2d');
+  g.drawImage(src, src.width * 0.25, src.height * 0.25, src.width * 0.5, src.height * 0.5, 0, 0, 96, 96);
+  FIN[id] = { id, name, mat, swatch: s.toDataURL('image/png') };
+}
+function metal(base, seed, lo, hi, contrast) {
+  const m = brushedCanvas(base, seed, contrast), r = roughCanvas(seed + 1, lo, hi);
+  const mat = new THREE.MeshStandardMaterial({ map: tex(m, true), roughnessMap: tex(r, false), bumpMap: tex(r, false), bumpScale: 0.15, roughness: 1, metalness: 1 });
+  return { mat, canvas: m };
+}
+{
+  const st = metal('#c3c6ca', 11, 70, 120, 0.06); addFin('steel', 'Brushed steel', st.mat, st.canvas);
+  const br = metal('#c9a14b', 31, 75, 125, 0.07); addFin('brass', 'Brass', br.mat, br.canvas);
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xe8ebee, metalness: 1, roughness: 0.035, envMapIntensity: 1.5 });
+  addFin('mirror', 'Mirror', chrome, mirrorCanvas());
+  const oc = woodCanvas('186,140,90', '110,72,40', 41);
+  addFin('oak', 'Oak', new THREE.MeshStandardMaterial({ map: tex(oc, true), bumpMap: tex(oc, false), bumpScale: 0.35, roughness: 0.55, metalness: 0 }), oc);
+  const wc = woodCanvas('96,60,38', '38,22,12', 43);
+  addFin('walnut', 'Walnut', new THREE.MeshStandardMaterial({ map: tex(wc, true), bumpMap: tex(wc, false), bumpScale: 0.35, roughness: 0.5, metalness: 0 }), wc);
+  addFin('glass', 'Black glass', new THREE.MeshPhysicalMaterial({ color: 0x090a0c, roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.3 }), glassCanvas());
+  addFin('white', 'White laminate', new THREE.MeshStandardMaterial({ color: 0xf0eee9, roughness: 0.45, metalness: 0 }), whiteCanvas());
+  const sc = stoneCanvas(51);
+  addFin('stone', 'Terrazzo', new THREE.MeshStandardMaterial({ map: tex(sc, true), bumpMap: tex(sc, false), bumpScale: 0.25, roughness: 0.38, metalness: 0.05 }), sc);
+}
+const shellMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.6, roughness: 0.5 });
+const trimMat = new THREE.MeshStandardMaterial({ color: 0x1f2124, metalness: 0.8, roughness: 0.35 });
+const ledMat = new THREE.MeshBasicMaterial({ color: 0xfff3df, toneMapped: false });
+const btnMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xfff0cc, emissiveIntensity: 0.9 });
+const dispMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a, toneMapped: false });
+
+/* ---------- surfaces (finish groups) ---------- */
+const RT = Math.round(Math.min(1024, Math.max(512, Math.min(innerWidth, innerHeight) * Math.min(devicePixelRatio || 1, 2) * 0.9)));
+/* lobby backdrop: drawn only inside mirror reflections, so mirrors show a lit room instead of a black void */
+const lobby = (() => {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 512;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 512);
+  grd.addColorStop(0, '#2c2f35'); grd.addColorStop(0.42, '#9a9892'); grd.addColorStop(0.58, '#8c8a85'); grd.addColorStop(1, '#25272b');
+  g.fillStyle = grd; g.fillRect(0, 0, 1024, 512);
+  g.filter = 'blur(10px)';
+  for (let i = 0; i < 8; i++) {
+    const x = i * 128 + 20;
+    g.fillStyle = i % 2 ? 'rgba(255,244,225,0.55)' : 'rgba(255,255,255,0.25)';
+    g.fillRect(x, 120, 54, 230);
+  }
+  g.fillStyle = 'rgba(255,240,215,0.5)'; g.fillRect(0, 40, 1024, 14);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.mapping = THREE.EquirectangularReflectionMapping;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(14, 32, 16), new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide, fog: false }));
+  m.rotation.y = Math.PI; m.visible = false; m.frustumCulled = false; scene.add(m);
+  return m;
+})();
+
+class Surface {
+  constructor() { this.panels = []; this.slots = []; this.live = []; }
+  panel(m) { this.panels.push(m); return m; }
+  slot(parent, w, h, pos, rot) { this.slots.push({ parent, w, h, pos, rot }); }
+  apply(id) {
+    const f = FIN[id], mir = id === 'mirror' && this.slots.length > 0;
+    for (const m of this.panels) { m.visible = !mir; if (!mir) m.material = f.mat; }
+    if (mir) this.showMirrors(); else this.hideMirrors();
+  }
+  showMirrors() {
+    if (this.live.length) return;
+    for (const s of this.slots) {
+      const r = new Reflector(new THREE.PlaneGeometry(s.w, s.h), { color: 0xdde1e5, textureWidth: RT, textureHeight: RT, clipBias: 0.002 });
+      r.position.copy(s.pos); r.rotation.set(s.rot[0], s.rot[1], s.rot[2]);
+      const ob = r.onBeforeRender;
+      r.onBeforeRender = function (...a) { const prev = lobby.visible; lobby.visible = true; ob.apply(this, a); lobby.visible = prev; };
+      s.parent.add(r); this.live.push(r);
+    }
+  }
+  hideMirrors() {
+    for (const r of this.live) { r.parent && r.parent.remove(r); r.geometry.dispose(); if (r.dispose) r.dispose(); }
+    this.live = [];
+  }
+  dispose() { this.hideMirrors(); }
+}
+
+/* ---------- cabin ---------- */
+function jit(g, R, su, sv) {
+  const uv = g.attributes.uv, ou = R(), ov = R();
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su + ou, uv.getY(i) * sv + ov);
+  uv.needsUpdate = true; return g;
+}
+const rbox = (R, w, h, t, r = 0.005) => jit(new RoundedBoxGeometry(w, h, t, 2, Math.min(r, t * 0.4, w * 0.4)), R, w, h);
+
+let cab = null;
+function buildCabin(sizeKey) {
+  if (cab) cab.dispose();
+  const { w, d } = SIZES[sizeKey], R = rng(21);
+  const root = new THREE.Group(), front = new THREE.Group(); root.add(front);
+  const S = { back: new Surface(), sides: new Surface(), floor: new Surface(), ceiling: new Surface(), rail: new Surface(), doors: new Surface() };
+  const put = (geo, mat, x, y, z, parent = root) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
+  const bx = (a, b, c, mat, x, y, z, parent) => put(new THREE.BoxGeometry(a, b, c), mat, x, y, z, parent);
+
+  // outer shell
+  bx(w + 0.2, 0.12, d + 0.14, shellMat, 0, -0.09, -0.01);
+  bx(w + 0.2, H + 0.25, 0.08, shellMat, 0, (H - 0.05) / 2, -d / 2 - 0.04);
+  bx(0.08, H + 0.25, d + 0.14, shellMat, -w / 2 - 0.04, (H - 0.05) / 2, -0.01);
+  bx(0.08, H + 0.25, d + 0.14, shellMat, w / 2 + 0.04, (H - 0.05) / 2, -0.01);
+  bx(w + 0.2, 0.1, d + 0.14, shellMat, 0, H + 0.05, -0.01);
+
+  // floor and threshold
+  S.floor.panel(put(jit(new THREE.BoxGeometry(w, 0.03, d - 0.1), R, w, d), FIN.steel.mat, 0, -0.015, -0.05));
+  S.floor.slot(root, w, d - 0.1, new THREE.Vector3(0, 0.0025, -0.05), [-Math.PI / 2, 0, 0]);
+  bx(w, 0.03, 0.12, trimMat, 0, -0.015, d / 2 - 0.04);
+
+  // ceiling, LED panel, spots
+  S.ceiling.panel(put(jit(new THREE.BoxGeometry(w, 0.04, d - 0.06), R, w, d), FIN.white.mat, 0, H - 0.02, -0.03));
+  S.ceiling.slot(root, w, d - 0.06, new THREE.Vector3(0, H - 0.0405, -0.03), [Math.PI / 2, 0, 0]);
+  const led = put(new THREE.PlaneGeometry(w * 0.6, d * 0.5), ledMat, 0, H - 0.043, 0); led.rotation.x = Math.PI / 2;
+  const area = new THREE.RectAreaLight(0xfff1de, 14, w * 0.6, d * 0.5);
+  area.position.set(0, H - 0.05, 0); area.lookAt(0, 0, 0); root.add(area);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const x = sx * w * 0.4, z = sz * d * 0.36;
+    const disc = put(new THREE.CircleGeometry(0.04, 24), ledMat, x, H - 0.043, z); disc.rotation.x = Math.PI / 2;
+    const sp = new THREE.SpotLight(0xfff0dc, 2.2, 0, 0.95, 0.9, 2);
+    sp.position.set(x, H - 0.06, z); sp.target.position.set(x * 1.15, 0, z * 1.1); root.add(sp, sp.target);
+  }
+  const fill = new THREE.PointLight(0xffe8cc, 2.2, 0, 2); fill.position.set(0, 1.3, 0); root.add(fill);
+
+  // wall panels
+  function wall(surface, len, pos, ry) {
+    const g = new THREE.Group(); g.position.copy(pos); g.rotation.y = ry; root.add(g);
+    const N = Math.max(2, Math.round(len / 0.46)), gap = 0.008, y0 = 0.1, y1 = H - 0.06, ph = y1 - y0, pw = (len - (N - 1) * gap) / N;
+    for (let i = 0; i < N; i++) {
+      const m = new THREE.Mesh(rbox(R, pw, ph, 0.02), FIN.steel.mat);
+      m.position.set(-len / 2 + pw / 2 + i * (pw + gap), (y0 + y1) / 2, 0.011); g.add(m); surface.panel(m);
+    }
+    surface.slot(g, len, ph, new THREE.Vector3(0, (y0 + y1) / 2, 0.0215), [0, 0, 0]);
+    put(new THREE.BoxGeometry(len, 0.1, 0.024), trimMat, 0, 0.05, 0.012, g);
+    put(new THREE.BoxGeometry(len, 0.06, 0.024), trimMat, 0, H - 0.03, 0.012, g);
+  }
+  wall(S.back, w, new THREE.Vector3(0, 0, -d / 2), 0);
+  wall(S.sides, d - 0.08, new THREE.Vector3(-w / 2, 0, -0.02), Math.PI / 2);
+  wall(S.sides, d - 0.08, new THREE.Vector3(w / 2, 0, -0.02), -Math.PI / 2);
+
+  // front frame, door leaves, operating panel
+  const ow = Math.min(0.9, w - 0.3), pwf = (w - ow) / 2;
+  for (const s of [-1, 1]) {
+    const px = s * (ow / 2 + pwf / 2);
+    const p = new THREE.Mesh(rbox(R, pwf, 2.0, 0.06), FIN.steel.mat); p.position.set(px, 1.0, d / 2 - 0.03); front.add(p); S.doors.panel(p);
+    const lf = new THREE.Mesh(rbox(R, pwf - 0.012, 1.96, 0.03), FIN.steel.mat); lf.position.set(px, 0.99, d / 2 + 0.02); front.add(lf); S.doors.panel(lf);
+  }
+  const hd = new THREE.Mesh(rbox(R, w, H - 2.0, 0.06), FIN.steel.mat); hd.position.set(0, (2.0 + H) / 2, d / 2 - 0.03); front.add(hd); S.doors.panel(hd);
+  const cpx = ow / 2 + pwf / 2, cpz = d / 2 - 0.06 - 0.004;
+  bx(Math.min(0.1, pwf - 0.03), 0.5, 0.008, trimMat, cpx, 1.15, cpz, front);
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
+    const b = put(new THREE.CylinderGeometry(0.0115, 0.0115, 0.006, 16).rotateX(Math.PI / 2), btnMat, cpx + (c ? 0.022 : -0.022), 0.98 + r * 0.07, cpz - 0.006, front);
+  }
+  bx(0.06, 0.025, 0.004, dispMat, cpx, 1.34, cpz - 0.005, front);
+
+  // handrail
+  {
+    const y = 0.92, xL = -w / 2 + 0.075, xR = w / 2 - 0.075, zB = -d / 2 + 0.075, zF = d / 2 - 0.17, rad = 0.12;
+    const path = new THREE.CurvePath();
+    const v = (x, z) => new THREE.Vector3(x, y, z);
+    path.add(new THREE.LineCurve3(v(xL, zF), v(xL, zB + rad)));
+    path.add(new THREE.QuadraticBezierCurve3(v(xL, zB + rad), v(xL, zB), v(xL + rad, zB)));
+    path.add(new THREE.LineCurve3(v(xL + rad, zB), v(xR - rad, zB)));
+    path.add(new THREE.QuadraticBezierCurve3(v(xR - rad, zB), v(xR, zB), v(xR, zB + rad)));
+    path.add(new THREE.LineCurve3(v(xR, zB + rad), v(xR, zF)));
+    const tg = new THREE.TubeGeometry(path, 180, 0.0175, 12, false);
+    const len = path.getLength(), uv = tg.attributes.uv;
+    for (let i = 0; i < uv.count; i++) { const u = uv.getX(i), vv = uv.getY(i); uv.setXY(i, vv * 0.11, u * len); }
+    S.rail.panel(put(tg, FIN.steel.mat, 0, 0, 0));
+    for (const [x, z] of [[xL, zF], [xR, zF]]) S.rail.panel(put(new THREE.SphereGeometry(0.0175, 12, 10), FIN.steel.mat, x, y, z));
+    const stand = (x, z, nx, nz) => {
+      const m = put(new THREE.CylinderGeometry(0.007, 0.007, 0.06, 10), FIN.steel.mat, x - nx * 0.03, y, z - nz * 0.03);
+      m.rotation.z = Math.PI / 2; if (nz) m.rotation.set(Math.PI / 2, 0, 0); S.rail.panel(m);
+    };
+    for (const z of [zF - 0.05, (zF + zB) / 2]) { stand(xL, z, 1, 0); stand(xR, z, -1, 0); }
+    for (const x of [-w * 0.25, w * 0.25]) stand(x, zB, 0, 1);
+  }
+
+  group.add(root);
+  cab = { root, front, S, dispose() { for (const k in S) S[k].dispose(); root.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); group.remove(root); } };
+  for (const k in S) S[k].apply(state.finish[k]);
+  front.visible = state.view !== 'cutaway';
+  $('#dims').textContent = `${Math.round(w * 1000)} × ${Math.round(d * 1000)} × ${Math.round(H * 1000)} mm`;
+  needs = true;
+}
+const group = new THREE.Group(); scene.add(group);
+
+// soft ground shadow
+{
+  const c = mk(256), g = c.getContext('2d'), gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.35, 'rgba(0,0,0,0.6)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 6.5), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = -0.152; m.renderOrder = -1; scene.add(m);
+}
+
+/* ---------- views ---------- */
+const VIEWS = { cutaway: { az: 10, pol: 87, fov: 36, ty: 1.05 }, exterior: { az: 30, pol: 77, fov: 36, ty: 1.05 } };
+function pose(mode) {
+  const { w, d } = SIZES[state.size];
+  if (mode === 'inside') {
+    const pos = new THREE.Vector3(0, 1.5, d * 0.3);
+    return { pos, look: pos.clone().add(new THREE.Vector3(0, -0.22, -1)), fov: 78 };
+  }
+  const v = VIEWS[mode], t = Math.tan(THREE.MathUtils.degToRad(v.fov / 2)), narrow = camera.aspect < 0.95;
+  const dist = Math.max(1.45 / t, (w + 0.8) / (2 * t * camera.aspect)) * (narrow ? 1.2 : 1.04);
+  const az = THREE.MathUtils.degToRad(v.az), pol = THREE.MathUtils.degToRad(v.pol), target = new THREE.Vector3(0, v.ty + (narrow ? 0.25 : 0), 0);
+  const pos = target.clone().add(new THREE.Vector3(Math.sin(az) * Math.sin(pol), Math.cos(pol), Math.cos(az) * Math.sin(pol)).multiplyScalar(dist));
+  return { pos, look: target, fov: v.fov };
+}
+let tw = null, yaw = 0, pitch = 0, insideOn = false;
+function applyInside() { camera.rotation.order = 'YXZ'; camera.rotation.set(pitch, yaw, 0); }
+function setView(mode, instant) {
+  const from = { pos: camera.position.clone(), look: insideOn ? camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3())) : controls.target.clone(), fov: camera.fov };
+  state.view = mode;
+  if (cab) cab.front.visible = mode !== 'cutaway';
+  for (const b of document.querySelectorAll('#views button')) b.setAttribute('aria-pressed', String(b.dataset.view === mode));
+  $('#hint').textContent = mode === 'inside' ? 'Drag to look around · scroll or pinch to zoom' : 'Drag to rotate · scroll or pinch to zoom';
+  tw = { t: instant ? 1 : 0, dur: 0.75, from, to: pose(mode), mode };
+  controls.enabled = false; needs = true;
+  if (instant) stepTween(0);
+}
+const ease = (x) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const look = new THREE.Vector3();
+function stepTween(dt) {
+  tw.t = Math.min(1, tw.t + dt / tw.dur);
+  const k = ease(tw.t);
+  camera.position.lerpVectors(tw.from.pos, tw.to.pos, k);
+  look.lerpVectors(tw.from.look, tw.to.look, k);
+  camera.rotation.order = 'XYZ';
+  camera.fov = THREE.MathUtils.lerp(tw.from.fov, tw.to.fov, k); camera.updateProjectionMatrix();
+  camera.lookAt(look);
+  if (tw.t >= 1) {
+    if (tw.mode === 'inside') {
+      const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); yaw = e.y; pitch = e.x; insideOn = true; applyInside();
+    } else {
+      insideOn = false; controls.target.copy(tw.to.look); controls.enabled = true; controls.update();
+    }
+    tw = null;
+  }
+  needs = true;
+}
+
+// look-around controls for the inside view
+const ptrs = new Map(); let pinch0 = 0, fov0 = 70;
+const pdist = () => { const a = [...ptrs.values()]; return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); };
+canvas.addEventListener('pointerdown', (e) => {
+  if (!insideOn || tw) return;
+  canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 2) { pinch0 = pdist(); fov0 = camera.fov; }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!insideOn || !ptrs.has(e.pointerId)) return;
+  const p = ptrs.get(e.pointerId), dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1) {
+    const k = 0.0045 * (camera.fov / 70);
+    yaw += dx * k; pitch = THREE.MathUtils.clamp(pitch + dy * k, -1.2, 1.2); applyInside();
+  } else if (ptrs.size === 2 && pinch0) {
+    camera.fov = THREE.MathUtils.clamp(fov0 * pinch0 / pdist(), 32, 95); camera.updateProjectionMatrix();
+  }
+  needs = true;
+});
+const up = (e) => { ptrs.delete(e.pointerId); };
+canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('wheel', (e) => {
+  if (!insideOn) return;
+  e.preventDefault(); camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * 0.04, 32, 95); camera.updateProjectionMatrix(); needs = true;
+}, { passive: false });
+
+/* ---------- interface ---------- */
+function selectSurface(k) {
+  state.active = k; refreshUI();
+  if (k === 'doors' && state.view === 'cutaway') setView('exterior');
+}
+function setFinish(k, id) {
+  state.finish[k] = id; if (cab) cab.S[k].apply(id); refreshUI(); needs = true;
+}
+function setSize(key) {
+  state.size = key; buildCabin(key);
+  for (const b of document.querySelectorAll('#sizes button')) b.setAttribute('aria-pressed', String(b.dataset.size === key));
+  if (insideOn) { const p = pose('inside'); camera.position.copy(p.pos); }
+  else { const p = pose(state.view); camera.position.copy(p.pos); controls.target.copy(p.look); controls.update(); }
+  needs = true;
+}
+function refreshUI() {
+  for (const b of document.querySelectorAll('#chips button')) b.setAttribute('aria-pressed', String(b.dataset.k === state.active));
+  const cur = state.finish[state.active];
+  for (const b of document.querySelectorAll('#swatches button')) b.setAttribute('aria-pressed', String(b.dataset.id === cur));
+  $('#sel').innerHTML = `<b>${SURF.find((s) => s.k === state.active).n}</b> · ${FIN[cur].name}`;
+}
+for (const s of SURF) {
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.k = s.k; b.textContent = s.n;
+  b.onclick = () => selectSurface(s.k); $('#chips').appendChild(b);
+}
+for (const id of ORDER) {
+  const f = FIN[id], b = document.createElement('button'); b.type = 'button'; b.className = 'sw'; b.dataset.id = id;
+  b.innerHTML = `<span class="dot" style="background-image:url(${f.swatch})"></span><span class="nm">${f.name}</span>`;
+  b.onclick = () => setFinish(state.active, id); $('#swatches').appendChild(b);
+}
+for (const b of document.querySelectorAll('#views button')) b.onclick = () => setView(b.dataset.view);
+for (const b of document.querySelectorAll('#sizes button')) b.onclick = () => setSize(b.dataset.size);
+
+/* ---------- loop ---------- */
+function resize() {
+  const w = viewEl.clientWidth, h = viewEl.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); needs = true;
+}
+new ResizeObserver(resize).observe(viewEl);
+resize();
+buildCabin('S');
+{ const p = pose('cutaway'); camera.position.copy(p.pos); controls.target.copy(p.look); controls.update(); }
+refreshUI();
+let last = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (tw) stepTween(dt);
+  else if (controls.enabled && controls.update()) needs = true;
+  if (needs) { needs = false; renderer.render(scene, camera); }
+}
+requestAnimationFrame(loop);
+window.__cabin = { setFinish, selectSurface, setSize, setView, state, force: () => { needs = true; }, pose, camera };
+</script>
+</body>
+</html>
